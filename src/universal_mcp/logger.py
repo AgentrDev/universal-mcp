@@ -14,7 +14,6 @@ def get_version():
     try:
         from importlib.metadata import version
 
-        print(version("universal_mcp"))
         return version("universal_mcp")
     except ImportError:
         return "unknown"
@@ -69,6 +68,3 @@ def setup_logger():
     telemetry_enabled = os.getenv("TELEMETRY_ENABLED", "true").lower() == "true"
     if telemetry_enabled:
         logger.add(posthog_sink, level="INFO")  # PostHog telemetry
-
-
-setup_logger()

@@ -1,6 +1,6 @@
 [project]
 name = "universal-mcp"
-version = "0.1.3rc1"
+version = "0.1.4"
 description = "Universal MCP acts as a middle ware for your API applications. It can store your credentials, authorize, enable disable apps on the fly and much more."
 readme = "README.md"
 authors = [
@@ -14,7 +14,6 @@ dependencies = [
     "mcp>=1.5.0",
     "pyyaml>=6.0.2",
     "typer>=0.15.2",
-    "markitdown[all]>=0.1.1",
     "keyring>=25.6.0",
     "litellm>=1.30.7",
     "rich>=14.0.0",
@@ -47,6 +46,9 @@ firecrawl=[
 ]
 serpapi = [
     "google-search-results>=2.4.2",
+]
+markitdown = [
+    "markitdown[all,e2b]>=0.1.1",
 ]
 [project.scripts]
 universal_mcp = "universal_mcp.cli:app"
