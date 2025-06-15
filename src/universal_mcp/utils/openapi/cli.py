@@ -1,14 +1,38 @@
+import os
 import re
 from pathlib import Path
 
+import litellm
 import typer
 from rich.console import Console
+from rich.status import Status
 
-# Setup rich console and logging
 console = Console()
 
 app = typer.Typer(name="codegen")
 
+def _model_callback(model: str) -> str:
+    """
+    Validates the model and checks if the required API key is set.
+    This callback is now silent on success.
+    """
+    api_key_env_var = None
+    if "claude" in model:
+        api_key_env_var = "ANTHROPIC_API_KEY"
+    elif "gpt" in model:
+        api_key_env_var = "OPENAI_API_KEY"
+    elif "gemini" in model:
+        api_key_env_var = "GEMINI_API_KEY"
+    elif "perplexity" in model:
+        api_key_env_var = "PERPLEXITYAI_API_KEY"
+
+    if api_key_env_var and not os.getenv(api_key_env_var):
+        error_message = f"Environment variable '{api_key_env_var}' is not set. Please set it to use the '{model}' model."
+        raise typer.BadParameter(error_message)
+    elif not api_key_env_var:
+        pass
+
+    return model
 
 @app.command()
 def generate(
@@ -103,6 +127,91 @@ def docgen(
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1) from e
 
+@app.command()
+def generate_from_llm(
+    output_dir: Path = typer.Option(
+        Path.cwd(),
+        "--output-dir",
+        "-o",
+        help="Directory to save 'app.py'. Defaults to the current directory.",
+        prompt="Enter the output directory",
+        resolve_path=True,
+    ),
+    model: str = typer.Option(
+        "perplexity/sonar",
+        "--model",
+        "-m",
+        help="The LLM model to use for generation (via LiteLLM).",
+        prompt="Enter the LLM model to use",
+        callback=_model_callback,
+    ),
+    prompt: str = typer.Option(
+        ...,
+        "--prompt",
+        "-p",
+        help="A natural language description of the application and its tools.",
+        prompt="Describe the application and its tools",
+    ),
+):
+    """
+    Generates an 'app.py' file from a natural language prompt using an LLM.
+    """
+    from universal_mcp.utils.prompts import APP_GENERATOR_SYSTEM_PROMPT
+
+    console.print(f"[bold blue]🚀 Starting App Generation using model: '{model}'[/bold blue]")
+
+    try:
+        if not output_dir.exists():
+             output_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        console.print(f"[red]❌ Failed to create output directory '{output_dir}': {e}[/red]")
+        raise typer.Exit(code=1) from e
+
+    output_file_path = output_dir / "app.py"
+    console.print(f"[green]Will save generated file to:[/green] [cyan]{output_file_path}[/cyan]")
+
+    messages = [
+        {"role": "system", "content": APP_GENERATOR_SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
+
+    response = None
+    with Status("[bold green]Generating app code... (this may take a moment)[/bold green]", console=console) as status:
+        try:
+            response = litellm.completion(
+                model=model,
+                messages=messages,
+                temperature=0.1,
+                timeout=120,
+            )
+        except Exception as e:
+            status.update("[bold red]❌ An error occurred during LLM API call.[/bold red]")
+            console.print(f"[red]Error: {e}[/red]")
+            raise typer.Exit(code=1) from e
+
+    if not response or not response.choices:
+        console.print("[bold red]❌ Failed to get a valid response from the LLM.[/bold red]")
+        raise typer.Exit(code=1)
+
+    generated_content = response.choices[0].message.content
+
+    code_match = re.search(r"```python\n(.*?)\n```", generated_content, re.DOTALL)
+    if code_match:
+        final_code = code_match.group(1).strip()
+    else:
+        console.print("[yellow]Warning: LLM response did not contain a markdown code block. Using the raw response.[/yellow]")
+        final_code = generated_content.strip()
+
+    if not final_code:
+        console.print("[bold red]❌ The LLM returned an empty code block. Aborting.[/bold red]")
+        raise typer.Exit(code=1)
+
+    try:
+        output_file_path.write_text(final_code, encoding="utf-8")
+        console.print("\n[bold green]✅ Success! Application code saved.[/bold green]")
+    except Exception as e:
+        console.print(f"\n[bold red]❌ Failed to write the generated code to file: {e}[/bold red]")
+        raise typer.Exit(code=1) from e
 
 @app.command()
 def init(
@@ -116,7 +225,7 @@ def init(
         None,
         "--app-name",
         "-a",
-        help="App name (letters, numbers, hyphens, underscores only)",
+        help="App name (letters, numbers and hyphens only , underscores not allowed)",
     ),
     integration_type: str | None = typer.Option(
         None,
@@ -129,24 +238,28 @@ def init(
 ):
     """Initialize a new MCP project using the cookiecutter template."""
     from cookiecutter.main import cookiecutter
+    from typer import confirm, prompt
 
-    NAME_PATTERN = r"^[a-zA-Z0-9_-]+$"
-
-    def validate_pattern(value: str, field_name: str) -> None:
+    from .cli import generate, generate_from_llm
+    
+    NAME_PATTERN = r"^[a-zA-Z0-9-]+$"
+        
+    def validate_app_name(value: str, field_name: str) -> None:
         if not re.match(NAME_PATTERN, value):
             console.print(
-                f"[red]❌ Invalid {field_name}; only letters, numbers, hyphens, and underscores allowed.[/red]"
+                f"[red]❌ Invalid {field_name}; only letters, numbers, hyphens allowed[/red]"
             )
             raise typer.Exit(code=1)
 
-    # App name
     if not app_name:
         app_name = typer.prompt(
             "Enter the app name",
             default="app_name",
             prompt_suffix=" (e.g., reddit, youtube): ",
         ).strip()
-    validate_pattern(app_name, "app name")
+        
+    validate_app_name(app_name, "app name")
+    
     app_name = app_name.lower()
     if not output_dir:
         path_str = typer.prompt(
@@ -167,7 +280,6 @@ def init(
         console.print(f"[red]❌ Output path '{output_dir}' exists but is not a directory.[/red]")
         raise typer.Exit(code=1)
 
-    # Integration type
     if not integration_type:
         integration_type = typer.prompt(
             "Choose the integration type",
@@ -195,7 +307,67 @@ def init(
 
     project_dir = output_dir / f"{app_name}"
     console.print(f"✅ Project created at {project_dir}")
+    
+    
+    generate_client = confirm("Do you want to also generate api_client ?")
 
+    if not generate_client:
+        console.print("[yellow]Skipping API client generation.[/yellow]")
+        return
+
+    has_openapi_spec = confirm("Do you have openapi spec for the application just created ?")
+
+    app_dir = app_name.lower().replace("-", "_")
+    target_app_dir = project_dir / "src" / f"universal_mcp_{app_dir}"
+
+    try:
+         target_app_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+         console.print(f"[red]❌ Failed to create target app directory '{target_app_dir}': {e}[/red]")
+         raise typer.Exit(code=1) from e
+
+
+    if has_openapi_spec:
+        schema_path_str = prompt("Enter the path to the OpenAPI schema file (JSON or YAML)")
+        schema_path = Path(schema_path_str)
+
+        if not schema_path.exists():
+             console.print(f"[red]Error: Schema file {schema_path} does not exist[/red]")
+             raise typer.Exit(1)
+         
+        class_name = "".join([part.title() for part in app_name.split('-')]) + "App"
+        
+        try:
+            console.print("\n[bold blue]Calling 'codegen generate' with provided schema...[/bold blue]")
+            generate(schema_path=schema_path, output_path=target_app_dir, class_name=class_name)
+
+        except typer.Exit as e:
+            console.print(f"[red]API client generation from schema failed. Exit code: {e.exit_code}[/red]")
+            raise
+        except Exception as e:
+            console.print(f"[red]An unexpected error occurred during API client generation from schema: {e}[/red]")
+            raise typer.Exit(code=1) from e
+
+    else:
+        try:
+            llm_model = prompt("Enter the LLM model to use", default="perplexity/sonar")
+            try:
+                 _model_callback(llm_model)
+            except typer.BadParameter as e:
+                 console.print(f"[red]Validation Error: {e}[/red]")
+                 raise typer.Exit(code=1) from e
+
+            llm_prompt_text = prompt("Describe the application and its tools (natural language)")
+
+            console.print("\n[bold blue]Calling 'codegen generate-from-llm'...[/bold blue]")
+            generate_from_llm(output_dir=target_app_dir, model=llm_model, prompt=llm_prompt_text)
+
+        except typer.Exit as e:
+            console.print(f"[red]API client generation from LLM failed. Exit code: {e.exit_code}[/red]")
+            raise
+        except Exception as e:
+            console.print(f"[red]An unexpected error occurred during API client generation from LLM: {e}[/red]")
+            raise typer.Exit(code=1) from e
 
 @app.command()
 def preprocess(

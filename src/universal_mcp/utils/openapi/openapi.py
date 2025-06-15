@@ -1057,7 +1057,7 @@ def generate_api_client(schema, class_name: str | None = None, filter_config_pat
     if api_title:
         # Convert API title to a clean class name
         if class_name:
-            clean_name = class_name.capitalize()[:-3] if class_name.endswith("App") else class_name.capitalize()
+            clean_name = class_name[:-3] if class_name.endswith("App") else class_name.capitalize()
         else:
             base_name = "".join(word.capitalize() for word in api_title.split())
             clean_name = "".join(c for c in base_name if c.isalnum())
