@@ -70,11 +70,13 @@ class MyApp(APIApplication):
 ### Loading an Application
 
 ```python
-from universal_mcp.applications import app_from_slug
+from universal_mcp.applications import app_from_config
+from universal_mcp.config import AppConfig
 
-# The system will automatically install the package if needed
-MyApp = app_from_slug("my-app")
-app = MyApp("my-app-instance")
+app_config_pkg = AppConfig(name="my-app")
+MyAppFromPackage = app_from_config(app_config_pkg)
+app_pkg_instance = MyAppFromPackage()
+
 ```
 
 ## Authentication
