@@ -3,12 +3,31 @@ from collections.abc import Callable
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
 
 from universal_mcp.exceptions import NotAuthorizedError, ToolError
 from universal_mcp.tools.docstring_parser import parse_docstring
 
 from .func_metadata import FuncMetadata
+
+
+def _get_return_type_schema(return_annotation: Any) -> dict[str, Any] | None:
+    """Convert return type annotation to JSON schema using Pydantic."""
+    if return_annotation == inspect.Signature.empty or return_annotation == Any:
+        return None
+    
+    try:
+        temp_model = create_model(
+            "ReturnTypeModel",
+            return_value=(return_annotation, ...)
+        )
+        
+        full_schema = temp_model.model_json_schema()
+        return_field_schema = full_schema.get("properties", {}).get("return_value")
+        
+        return return_field_schema
+    except Exception:
+        return None
 
 
 class Tool(BaseModel):
@@ -27,6 +46,7 @@ class Tool(BaseModel):
     )
     tags: list[str] = Field(default_factory=list, description="Tags for categorizing the tool")
     parameters: dict[str, Any] = Field(description="JSON schema for tool parameters")
+    output_schema: dict[str, Any] | None = Field(default=None, description="JSON schema for tool output")
     fn_metadata: FuncMetadata = Field(
         description="Metadata about the function including a pydantic model for tool arguments"
     )
@@ -53,6 +73,9 @@ class Tool(BaseModel):
         func_arg_metadata = FuncMetadata.func_metadata(fn, arg_description=parsed_doc["args"])
         parameters = func_arg_metadata.arg_model.model_json_schema()
 
+        sig = inspect.signature(fn)
+        output_schema = _get_return_type_schema(sig.return_annotation)
+
         simple_args_descriptions: dict[str, str] = {}
         if parsed_doc.get("args"):
             for arg_name, arg_details in parsed_doc["args"].items():
@@ -68,6 +91,7 @@ class Tool(BaseModel):
             raises_description=parsed_doc["raises"],
             tags=parsed_doc["tags"],
             parameters=parameters,
+            output_schema=output_schema,
             fn_metadata=func_arg_metadata,
             is_async=is_async,
         )
