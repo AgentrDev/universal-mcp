@@ -1,6 +1,7 @@
 import pytest
 
-from universal_mcp.applications import app_from_slug
+from universal_mcp.applications import app_from_config
+from universal_mcp.config import AppConfig
 from universal_mcp.utils.testing import check_application_instance
 
 ALL_APPS = [
@@ -69,6 +70,7 @@ ALL_APPS = [
 
 @pytest.mark.parametrize("app_name", ALL_APPS)
 def test_application(app_name):
-    app = app_from_slug(app_name)
-    app_instance = app(integration=None)
+    app_config = AppConfig(name=app_name, source_type="package")
+    app_class = app_from_config(app_config)
+    app_instance = app_class(integration=None)
     check_application_instance(app_instance, app_name)

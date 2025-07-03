@@ -5,7 +5,7 @@ from loguru import logger
 from mcp.server.fastmcp import FastMCP
 from mcp.types import TextContent
 
-from universal_mcp.applications import BaseApplication, app_from_slug
+from universal_mcp.applications import BaseApplication, app_from_config
 from universal_mcp.config import AppConfig, ServerConfig
 from universal_mcp.exceptions import ConfigurationError, ToolError
 from universal_mcp.integrations import AgentRIntegration, integration_from_config
@@ -43,7 +43,7 @@ def load_from_local_config(config: ServerConfig, tool_manager: ToolManager) -> N
                     integration = integration_from_config(app_config.integration, store=store if config.store else None)
                 except Exception as e:
                     logger.error(f"Failed to setup integration for {app_config.name}: {e}", exc_info=True)
-            app = app_from_slug(app_config.name)(integration=integration)
+            app = app_from_config(app_config)(integration=integration)
             tool_manager.register_tools_from_app(app, app_config.actions)
             logger.info(f"Loaded app: {app_config.name}")
         except Exception as e:
@@ -62,7 +62,7 @@ def load_from_agentr_server(client: AgentrClient, tool_manager: ToolManager) -> 
                     if app_config.integration
                     else None
                 )
-                app_instance = app_from_slug(app_config.name)(integration=integration)
+                app_instance = app_from_config(app_config)(integration=integration)
                 tool_manager.register_tools_from_app(app_instance, app_config.actions)
                 logger.info(f"Loaded app from AgentR: {app_config.name}")
             except Exception as e:

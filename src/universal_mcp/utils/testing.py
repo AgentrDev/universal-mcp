@@ -1,9 +1,30 @@
 from loguru import logger
 
-from universal_mcp.tools.tools import Tool
+from universal_mcp.applications import BaseApplication
+from universal_mcp.tools import Tool
 
 
-def check_application_instance(app_instance, app_name):
+def check_application_instance(app_instance: BaseApplication, app_name: str):
+    """
+    Performs a series of assertions to validate an application instance and its tools.
+
+    This function checks for the following:
+    - The application instance is not None.
+    - The application instance's name matches the expected application name.
+    - The application has at least one tool.
+    - Each tool has a non-None name with a valid length (1-47 characters).
+    - Each tool has a non-None description.
+    - All tool names are unique within the application.
+    - The application has at least one tool tagged as "important".
+
+    Args:
+        app_instance: The application instance to check. Must be an instance of BaseApplication.
+        app_name: The expected name of the application.
+
+    Raises:
+        AssertionError: If any of the validation checks fail.
+    """
+    
     assert app_instance is not None, f"Application object is None for {app_name}"
     assert app_instance.name == app_name, (
         f"Application instance name '{app_instance.name}' does not match expected name '{app_name}'"
